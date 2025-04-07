@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast, Toaster } from "react-hot-toast"; // Import toast and Toaster
+import QuotesGrid from "@/components/QuotesGrid";
 
 const API_URL = "http://127.0.0.1:8000";
 
@@ -31,6 +32,8 @@ export default function QuotesPage() {
   const userId = queryParams.get("userId");
 
   const [quotes, setQuotes] = useState([]);
+  const [recommendedQuotes, setRecommendedQuotes] = useState([]);
+  const [recommendationRequest, setRecommendationRequest] = useState([]);
   const [newQuote, setNewQuote] = useState({
     quote: "",
     author: "",
@@ -38,7 +41,6 @@ export default function QuotesPage() {
     likes: 0,
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [expandedQuotes, setExpandedQuotes] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -47,7 +49,7 @@ export default function QuotesPage() {
     setIsLoading(true);
     try {
       const response = await axios.get(`${API_URL}/quotes`, {
-        params: { user_id: userId, limit: 20, skip: 0 },
+        params: { user_id: userId, limit: 20, skip: 20 },
       });
       setQuotes(response.data);
     } catch (err) {
@@ -56,11 +58,64 @@ export default function QuotesPage() {
       setIsLoading(false);
     }
   };
+  const fetchQuotesByIds = async (idsList) => {
+    setIsLoading(true);
+    try {
+      const response = await axios.post(`${API_URL}/quotes/by_ids`, {
+        user_id: userId,
+        quote_ids: idsList,
+      });
+      console.log("response", response.data);
+      setRecommendedQuotes(response.data);
+    } catch (err) {
+      setError("Failed to fetch quotes.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchRecommendedQuotes = async () => {
+    setIsLoading(true);
+    console.log("recommendationRequest");
+    console.log(recommendationRequest);
+    try {
+      axios
+        .post(`${API_URL}/recommend`, recommendationRequest)
+        .then((res) => fetchQuotesByIds(res.data.recommendations));
+      // const recommendations = await fetchQuotesByIds(
+      //   response.data.recommendations
+      // );
+      // setRecommendedQuotes(recommendations);
+    } catch (err) {
+      console.log(err.message);
+      setError("Failed to fetch recommended quotes.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchQuotes();
   }, []);
-
+  useEffect(() => {
+    generateRecommendationRequest();
+  }, [userId]);
+  useEffect(() => {
+    fetchRecommendedQuotes();
+  }, [recommendationRequest]);
+  const generateRecommendationRequest = async () => {
+    setIsLoading(true);
+    try {
+      const response = await axios.get(
+        `${API_URL}/recommendation_request/${userId}`
+      );
+      setRecommendationRequest(response.data);
+    } catch (err) {
+      setError("Failed to generate recommendation request.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setNewQuote((prev) => ({ ...prev, [name]: value }));
@@ -78,55 +133,6 @@ export default function QuotesPage() {
         setError("Failed to add quote.");
       }
     }
-  };
-
-  const handleLike = async (id) => {
-    try {
-      console.log("id", id);
-      console.log("userId", userId);
-      const response = await axios.patch(`${API_URL}/quotes/${id}/likes`, {
-        id: id,
-        user_id: userId,
-      });
-
-      // Check if response contains the updated quote and is liked status
-      if (response.data) {
-        console.log(response.data);
-        const updatedQuote = response.data;
-
-        // Update the state with the modified quote
-        setQuotes((prevQuotes) =>
-          prevQuotes.map((quote) =>
-            quote.id === id ? { ...quote, ...updatedQuote } : quote
-          )
-        );
-      } else {
-        setError("Failed to update like.");
-      }
-    } catch (err) {
-      // Handle different types of errors more explicitly
-      if (err.response) {
-        // Server responded with a status other than 2xx
-        setError(
-          `Server Error: ${
-            err.response.data.detail || "Failed to update like."
-          }`
-        );
-      } else if (err.request) {
-        // No response received from the server
-        setError("No response from the server.");
-      } else {
-        // Other types of errors (e.g., network issues)
-        setError(`Error: ${err.message}`);
-      }
-    }
-  };
-
-  const toggleQuoteExpansion = (id) => {
-    setExpandedQuotes((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
   };
 
   return (
@@ -200,67 +206,13 @@ export default function QuotesPage() {
       ) : error ? (
         <p className="text-red-500">{error}</p>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
-          {quotes.map((quote) => (
-            <Card
-              key={quote.id}
-              className="transition-transform hover:scale-105 overflow-hidden"
-            >
-              <CardContent className="p-4 ">
-                <div className="flex justify-end items-center">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleQuoteExpansion(quote.id)}
-                  >
-                    {expandedQuotes[quote.id] ? (
-                      <ChevronUp className="w-4 h-4" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-                <blockquote
-                  className={`text-lg italic mb-2 ${
-                    expandedQuotes[quote.id] ? "" : "line-clamp-2"
-                  }`}
-                >
-                  "{quote.quote}"
-                </blockquote>
-                <p className="text-right font-semibold">- {quote.author}</p>
-                <div className="w-full flex justify-between items-center mt-4">
-                  <div className="w-2/3">
-                    <p className="text-xs text-muted-foreground">Tags:</p>
-                    <ul className="text-xs flex flex-wrap gap-1 p-1">
-                      {quote.tags.split(";").map((tag, index) => (
-                        <li
-                          key={index}
-                          className="inline bg-zinc-200 px-2 py-1 rounded-sm text-zinc-500"
-                        >
-                          {tag}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`flex items-center gap-2 ${
-                      quote.isLiked ? "text-red-500" : "text-zinc-500"
-                    }`}
-                    onClick={() => handleLike(quote.id)}
-                  >
-                    <Heart
-                      className="w-4 h-4"
-                      fill={quote.isLiked ? "currentColor" : "none"}
-                    />
-                    <span>{quote.likes}</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <QuotesGrid
+          recommendedQuotes={recommendedQuotes}
+          quotes={quotes}
+          setQuotes={setQuotes}
+          userId={userId}
+          type="grid"
+        />
       )}
     </div>
   );
